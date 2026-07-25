@@ -11,7 +11,7 @@ import argparse
 import sys
 import numpy as np
 
-from protocol import decode_from_wave, FS
+from protocol import decode_from_wave, FS, encode_to_wave
 
 
 def record_audio(seconds: float, fs: int = FS) -> np.ndarray:
@@ -51,7 +51,7 @@ def main():
     src.add_argument("--listen", type=float, help="Слушать микрофон N секунд")
     src.add_argument("--wav", help="Декодировать готовый WAV-файл (для отладки)")
     ap.add_argument("--out", help="Сохранить декодированные байты в файл (иначе печать в консоль)")
-    ap.add_argument("--retries", type=int, default=1,
+    ap.add_argument("--retries", type=int, default=2,
                      help="Если из микрофона — сколько раз слушать заново при неудаче")
     args = ap.parse_args()
 
@@ -66,11 +66,10 @@ def main():
             audio = record_audio(args.listen)
             payload = decode_from_wave(audio)
             if payload is None and attempt < args.retries:
-                print("[receiver] не удалось декодировать (нет сигнала/CRC не сошёлся), пробую снова...")
+                print("[receiver] не удалось декодировать, пробую снова...")
 
     if payload is None:
-        print("[receiver] ОШИБКА: не удалось распознать сигнал (нет sync-тона или CRC не совпал)",
-              file=sys.stderr)
+        print("[receiver] ОШИБКА: не удалось распознать сигнал", file=sys.stderr)
         sys.exit(1)
 
     print(f"[receiver] получено {len(payload)} байт")
