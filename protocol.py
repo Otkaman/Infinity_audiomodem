@@ -224,15 +224,29 @@ def _filter_noise(samples: np.ndarray) -> np.ndarray:
     return samples * window
 
 
-def detect_end_marker(samples: np.ndarray, fs=FS, threshold: float = 0.04) -> bool:
-    if len(samples) < int(0.5 * fs):
+def detect_end_marker(samples: np.ndarray, fs=FS, threshold: float = 0.12) -> bool:
+    if len(samples) < int(0.8 * fs):
         return False
+
+    energy = float(np.mean(np.square(samples.astype(np.float64))))
+    if energy < 1e-4:
+        return False
+
     marker = build_end_marker_wave(fs=fs)
     if len(marker) > len(samples):
         marker = marker[:len(samples)]
-    corr = np.correlate(samples[:len(marker)].astype(np.float64), marker.astype(np.float64), mode="full")
+
+    signal = samples[:len(marker)].astype(np.float64)
+    corr = np.correlate(signal, marker.astype(np.float64), mode="full")
     peak = float(np.max(corr))
-    return peak > threshold
+    if peak <= threshold:
+        return False
+
+    marker_energy = float(np.mean(np.square(marker)))
+    if marker_energy <= 0:
+        return False
+
+    return peak / max(marker_energy, 1e-8) > 0.8
 
 
 def _find_sync_end(samples: np.ndarray, fs=FS, start_index: int = 0) -> int:
