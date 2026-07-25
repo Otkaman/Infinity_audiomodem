@@ -1,27 +1,33 @@
 """
 Приёмник. Слушает микрофон и декодирует данные.
 
+Пресеты (--preset):
+  turbo    — макс. скорость
+  fast     — быстро
+  medium   — сбалансированно
+  normal   — надёжно (по умолчанию)
+  robust   — макс. надёжность
+
 Использование:
-  python3 receiver.py --out result.bin           # слушать до маркера завершения
-  python3 receiver.py --wav received.wav         # декодировать готовый WAV-файл (отладка)
+  python receiver.py --out . --preset fast
+  python receiver.py --wav received.wav
 """
 
 import argparse
 import sys
 import numpy as np
 
-from protocol import decode_from_wave, detect_end_marker, FS
+from protocol import decode_with_preset, decode_file_transfer_from_wave, detect_end_marker, build_end_marker_wave, FS, PRESET_NAMES
 
 
-def record_until_end_marker(seconds: float, fs: int = FS) -> np.ndarray:
+def record_until_end_marker(chunk_seconds: float, fs: int = FS) -> np.ndarray:
     import sounddevice as sd
-    seconds = max(float(seconds), 0.1)
-    print(f"[receiver] слушаю до завершения передачи, блок {seconds:.1f} сек...")
+    chunk_seconds = max(float(chunk_seconds), 0.1)
+    print(f"[receiver] слушаю до маркера завершения, блок {chunk_seconds:.1f} сек...")
     total = []
-    chunk_samples = max(int(seconds * fs), 1)
-    saw_payload = False
-    silence_chunks = 0
-    max_silence_chunks = 2
+    chunk_samples = max(int(chunk_seconds * fs), 1)
+    marker = build_end_marker_wave(fs=fs)
+    marker_len = len(marker)
 
     while True:
         chunk = sd.rec(chunk_samples, samplerate=fs, channels=1, dtype="float32")
@@ -30,27 +36,15 @@ def record_until_end_marker(seconds: float, fs: int = FS) -> np.ndarray:
         total.append(audio)
         combined = np.concatenate(total)
 
-        if not saw_payload:
-            payload = decode_from_wave(combined)
-            if payload is not None:
-                saw_payload = True
-                silence_chunks = 0
-                print("[receiver] пойман основной сигнал передачи")
-
-        if saw_payload:
-            if detect_end_marker(combined):
+        if len(combined) >= marker_len:
+            tail = combined[-marker_len:]
+            if detect_end_marker(tail, fs=fs):
                 print("[receiver] обнаружен маркер завершения")
-                break
+                return combined[:-marker_len]
 
-            if np.mean(np.abs(audio)) < 1e-4:
-                silence_chunks += 1
-                if silence_chunks >= max_silence_chunks:
-                    print("[receiver] тишина после передачи, завершаю запись")
-                    break
-            else:
-                silence_chunks = 0
-
-    return combined
+        if len(combined) > fs * 300:
+            print("[receiver] таймаут: маркер не обнаружен")
+            return combined
 
 
 def load_wav(path: str, target_fs: int = FS) -> np.ndarray:
@@ -60,8 +54,7 @@ def load_wav(path: str, target_fs: int = FS) -> np.ndarray:
         if data.ndim > 1:
             data = data.mean(axis=1)
         if fs != target_fs:
-            print(f"[receiver] ВНИМАНИЕ: частота файла {fs} != {target_fs}, "
-                  f"декодер может ошибаться без ресемплинга", file=sys.stderr)
+            print(f"[receiver] ВНИМАНИЕ: частота файла {fs} != {target_fs}", file=sys.stderr)
         return data
     except ImportError:
         import wave as wavemod
@@ -79,34 +72,39 @@ def main():
     ap = argparse.ArgumentParser()
     src = ap.add_mutually_exclusive_group()
     src.add_argument("--wav", help="Декодировать готовый WAV-файл (для отладки)")
-    ap.add_argument("--out", help="Сохранить декодированные байты в файл (иначе печать в консоль)")
+    ap.add_argument("--out", help="Папка для сохранения файла (по умолчанию текущая)")
     ap.add_argument("--chunk-seconds", type=float, default=5.0,
-                     help="Длина блока записи до следующей проверки маркера завершения")
+                     help="Длина блока записи (сек)")
+    ap.add_argument("--preset", default="normal", choices=PRESET_NAMES,
+                     help="Пресет скорости/надёжности (по умолчанию normal)")
+    ap.add_argument("--fast", action="store_true",
+                     help="= --preset fast")
     args = ap.parse_args()
+
+    if args.fast:
+        args.preset = "fast"
 
     if args.wav:
         audio = load_wav(args.wav)
-        payload = decode_from_wave(audio)
     else:
-        payload = None
         audio = record_until_end_marker(max(args.chunk_seconds, 0.1))
-        payload = decode_from_wave(audio)
 
-    if payload is None:
-        print("[receiver] ОШИБКА: не удалось распознать сигнал", file=sys.stderr)
+    result = decode_with_preset(audio, preset=args.preset)
+
+    if result is None:
+        print("[receiver] ОШИБКА: не удалось распознать передачу файла", file=sys.stderr)
         sys.exit(1)
 
-    print(f"[receiver] получено {len(payload)} байт")
+    filename, payload = result
+    print(f"[receiver] получен файл: {filename} ({len(payload)} байт), пресет: {args.preset}")
 
-    if args.out:
-        with open(args.out, "wb") as f:
-            f.write(payload)
-        print(f"[receiver] сохранено в {args.out}")
-    else:
-        try:
-            print("[receiver] текст:", payload.decode("utf-8"))
-        except UnicodeDecodeError:
-            print("[receiver] бинарные данные (не UTF-8):", payload)
+    import os
+    out_dir = args.out or "."
+    os.makedirs(out_dir, exist_ok=True)
+    out_path = os.path.join(out_dir, filename)
+    with open(out_path, "wb") as f:
+        f.write(payload)
+    print(f"[receiver] сохранено в {out_path}")
 
 
 if __name__ == "__main__":

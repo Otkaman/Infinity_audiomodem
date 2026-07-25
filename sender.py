@@ -1,12 +1,17 @@
 """
-Отправитель. Кодирует текст или файл в аудиосигнал (FSK) и:
-  - проигрывает через динамик, и/или
-  - сохраняет в .wav (полезно для отладки без второго устройства)
+Отправитель. Кодирует файл или текст в аудиосигнал (FSK) и проигрывает через динамик
+или сохраняет в WAV.
+
+Пресеты (--preset):
+  turbo    — макс. скорость (тишина, ноутбуки рядом)
+  fast     — быстро (тихая комната)
+  medium   — сбалансированно
+  normal   — надёжно (по умолчанию)
+  robust   — макс. надёжность (шум, большое расстояние)
 
 Использование:
-  python3 sender.py --text "привет" --play
-  python3 sender.py --file secret.bin --play --save out.wav
-  python3 sender.py --text "test" --save out.wav      # без реального звука, только файл
+  python sender.py --file data.bin --play --preset fast
+  python sender.py --text "test" --save out.wav
 """
 
 import argparse
@@ -14,7 +19,7 @@ import os
 import sys
 import numpy as np
 
-from protocol import encode_file_transfer_wave, FS
+from protocol import encode_with_preset, encode_file_transfer_wave, FS, PRESET_NAMES
 
 
 def save_wav(path: str, wave: np.ndarray, fs: int = FS):
@@ -22,7 +27,6 @@ def save_wav(path: str, wave: np.ndarray, fs: int = FS):
         import soundfile as sf
         sf.write(path, wave, fs)
     except ImportError:
-        # fallback без внешней либы: пишем 16-bit PCM WAV вручную через wave-модуль
         import wave as wavemod
         pcm = np.clip(wave, -1.0, 1.0)
         pcm16 = (pcm * 32767).astype(np.int16)
@@ -67,8 +71,16 @@ def main():
     src.add_argument("--file", help="Путь к файлу для отправки")
     ap.add_argument("--play", action="store_true", help="Проиграть через динамик")
     ap.add_argument("--save", help="Сохранить сигнал в WAV-файл")
-    ap.add_argument("--chunk-size", type=int, default=120, help="Размер чанка для передачи файла (рекомендуется 120 или меньше)")
+    ap.add_argument("--preset", default="normal", choices=PRESET_NAMES,
+                     help="Пресет скорости/надёжности (по умолчанию normal)")
+    ap.add_argument("--fast", action="store_true",
+                     help="= --preset fast")
+    ap.add_argument("--chunk-size", type=int, default=120,
+                     help="Размер чанка (только для UART-пресетов)")
     args = ap.parse_args()
+
+    if args.fast:
+        args.preset = "fast"
 
     if args.text is not None:
         payload = args.text.encode("utf-8")
@@ -78,8 +90,12 @@ def main():
             payload = f.read()
         filename = os.path.basename(args.file)
 
-    wave = encode_file_transfer_wave(filename, payload, chunk_size=args.chunk_size)
-    print(f"[sender] payload: {len(payload)} байт, длительность сигнала: {len(wave)/FS:.1f} сек")
+    print(f"[sender] файл: {filename}, {len(payload)} байт, пресет: {args.preset}")
+
+    wave = encode_with_preset(filename, payload, preset=args.preset)
+
+    duration = len(wave) / FS
+    print(f"[sender] длительность сигнала: {duration:.1f} сек ({duration/60:.1f} мин)")
 
     if args.save:
         save_wav(args.save, wave)
@@ -88,7 +104,7 @@ def main():
         play_audio(wave)
 
     if not args.play and not args.save:
-        print("[sender] укажи --play и/или --save, иначе сигнал никуда не пойдёт")
+        print("[sender] укажи --play и/или --save")
 
 
 if __name__ == "__main__":

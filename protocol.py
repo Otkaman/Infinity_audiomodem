@@ -1,4 +1,4 @@
-"""
+ """
 Протокол передачи данных через звук (FSK, UART-подобное кадрирование).
 
 Формат кадра:
@@ -21,10 +21,120 @@ import numpy as np
 FS = 44100              # частота дискретизации
 FREQ0 = 2000.0           # тон для бита 0
 FREQ1 = 3000.0           # тон для бита 1
-SYMBOL_DURATION = 0.08   # более длинный и устойчивый символ
-SYNC_TONE_DURATION = 1.0 # длительность калибровочного тона
-GAP_DURATION = 0.15      # тишина между sync-тоном и данными
+
+# ---------------------------------------------------------------------------
+# Пресеты для разных условий
+# ---------------------------------------------------------------------------
+# symbol_ms  — длительность одного бита в мс
+# gap_ms     — пауза между битами в мс (0 = нет паузы)
+# sync_ms    — длительность синхротона в мс
+# uart       — True: UART-обрамление (старт/стоп биты), False: чистые биты
+# desc       — описание на русском
+# chunk_size — размер чанка для UART-режима
+PRESETS = {
+    "turbo": {
+        "symbol_ms": 2, "gap_ms": 0, "sync_ms": 500,
+        "uart": False, "chunk_size": 0,
+        "desc": "Максимальная скорость (20 КБ за ~5 мин). Только в тишине, ноутбуки рядом",
+    },
+    "fast": {
+        "symbol_ms": 3, "gap_ms": 0, "sync_ms": 500,
+        "uart": False, "chunk_size": 0,
+        "desc": "Быстро (20 КБ за ~8 мин). Тихая комната, небольшое расстояние",
+    },
+    "medium": {
+        "symbol_ms": 10, "gap_ms": 5, "sync_ms": 500,
+        "uart": True, "chunk_size": 200,
+        "desc": "Сбалансированно (20 КБ за ~30 мин). Небольшие помехи",
+    },
+    "normal": {
+        "symbol_ms": 30, "gap_ms": 10, "sync_ms": 1000,
+        "uart": True, "chunk_size": 200,
+        "desc": "Надёжно (20 КБ за ~90 мин). Обычные комнатные условия",
+    },
+    "robust": {
+        "symbol_ms": 80, "gap_ms": 20, "sync_ms": 1000,
+        "uart": True, "chunk_size": 120,
+        "desc": "Максимальная надёжность (20 КБ за ~4 ч). Шумное помещение, большое расстояние",
+    },
+}
+
+PRESET_NAMES = tuple(PRESETS.keys())
+
+
+def resolve_preset(name: str) -> dict:
+    """Вернуть параметры пресета по имени (регистр не важен)."""
+    name = name.lower()
+    if name in PRESETS:
+        return PRESETS[name]
+    raise ValueError(
+        f"Неизвестный пресет '{name}'. Доступны: {', '.join(PRESET_NAMES)}"
+    )
+
+
+def encode_with_preset(
+    filename: str,
+    payload: bytes,
+    preset: str = "normal",
+    fs=FS,
+) -> np.ndarray:
+    """
+    Закодировать файл, используя пресет.
+    Если пресет с uart=False — вызывает fast_encode_file_transfer_wave.
+    Иначе — обычный encode_file_transfer_wave с параметрами пресета.
+    """
+    p = resolve_preset(preset)
+    if not p["uart"]:
+        return fast_encode_file_transfer_wave(
+            filename, payload, fs=fs,
+            symbol_ms=p["symbol_ms"], sync_ms=p["sync_ms"],
+        )
+    symbol_duration = p["symbol_ms"] / 1000
+    gap_duration = p["gap_ms"] / 1000
+    sync_duration = p["sync_ms"] / 1000
+    return encode_file_transfer_wave(
+        filename, payload,
+        fs=fs,
+        symbol_duration=symbol_duration,
+        gap_duration=gap_duration,
+        sync_tone_duration=sync_duration,
+        chunk_size=p["chunk_size"],
+    )
+
+
+def decode_with_preset(
+    samples: np.ndarray,
+    preset: str = "normal",
+    fs=FS,
+):
+    """
+    Декодировать, используя пресет.
+    Если пресет с uart=False — вызывает fast_decode_file_transfer_from_wave.
+    Иначе — decode_file_transfer_from_wave с параметрами пресета.
+    """
+    p = resolve_preset(preset)
+    if not p["uart"]:
+        return fast_decode_file_transfer_from_wave(
+            samples, fs=fs, symbol_ms=p["symbol_ms"],
+        )
+    symbol_duration = p["symbol_ms"] / 1000
+    gap_duration = p["gap_ms"] / 1000
+    return decode_file_transfer_from_wave(
+        samples, fs=fs,
+        symbol_duration=symbol_duration,
+        gap_duration=gap_duration,
+    )
+
+
+SYMBOL_DURATION = PRESETS["robust"]["symbol_ms"] / 1000
+SYNC_TONE_DURATION = PRESETS["robust"]["sync_ms"] / 1000
+GAP_DURATION = PRESETS["robust"]["gap_ms"] / 1000
 PREAMBLE = bytes([0xAA, 0xAA, 0xAA, 0xAA])
+
+# Быстрый режим — всё одним потоком, без UART, без пауз между битами
+FAST_SYMBOL_DURATION = 0.003  # 3 мс на бит (~333 бит/с)
+FAST_SYNC_DURATION = 0.5      # синхротон короче
+FAST_PREAMBLE = b"\xAA\xAA\xAA\xAA"  # 32 бита для синхронизации
 
 
 def crc8(data: bytes) -> int:
@@ -118,8 +228,8 @@ def encode_to_wave(
 def build_file_transfer_frames(filename: str, payload: bytes, chunk_size: int = 120) -> list[bytes]:
     if chunk_size <= 0:
         raise ValueError("chunk_size must be > 0")
-    if chunk_size > 120:
-        chunk_size = 120
+    if chunk_size > 200:
+        chunk_size = 200
     name_bytes = filename.encode("utf-8")
     if len(name_bytes) > 255:
         raise ValueError("filename too long")
@@ -179,7 +289,6 @@ def encode_file_transfer_wave(
     if not chunks:
         return np.zeros(0, dtype=np.float32)
     wave = np.concatenate(chunks)
-    wave = (wave * 0.8).astype(np.float32)
     marker = build_end_marker_wave(fs=fs)
     return np.concatenate([wave, marker]).astype(np.float32)
 
@@ -463,3 +572,137 @@ def decode_file_transfer_from_wave(
         offset += max(next_index or step, step)
 
     return None
+
+
+# ---------------------------------------------------------------------------
+# FAST MODE — непрерывный битовый поток, без UART-обрамления,
+#             без пауз между битами, один синхротон на всю передачу.
+#             Цель: 20 КБ за < 10 мин.
+# ---------------------------------------------------------------------------
+
+def _pack_bits(data: bytes) -> list[int]:
+    """Байты -> биты LSB first, без UART."""
+    bits = []
+    for byte in data:
+        for i in range(8):
+            bits.append((byte >> i) & 1)
+    return bits
+
+
+def _unpack_bytes(bits: list[int]) -> bytes:
+    """Биты LSB first -> байты (только полные группы по 8)."""
+    out = bytearray()
+    for i in range(0, len(bits) - 7, 8):
+        byte = 0
+        for j in range(8):
+            byte |= (bits[i + j] << j)
+        out.append(byte)
+    return bytes(out)
+
+
+def fast_encode_file_transfer_wave(
+    filename: str,
+    payload: bytes,
+    fs=FS,
+    symbol_ms: int = 3,
+    sync_ms: int = 500,
+) -> np.ndarray:
+    """
+    Кодирует файл непрерывным FSK-потоком.
+    Формат: sync(3000 Гц) | gap | преамбула | заголовок | данные | end_marker
+    Каждый байт — 8 бит LSB first, без старт/стоп битов и без пауз между битами.
+    """
+    symbol_duration = symbol_ms / 1000
+    sync_duration = sync_ms / 1000
+    name_bytes = filename.encode("utf-8")
+    name_len = len(name_bytes)
+    if name_len > 255:
+        raise ValueError("filename too long")
+
+    total_size = len(payload)
+    checksum = crc32(payload)
+
+    header = (
+        bytes([name_len])
+        + name_bytes
+        + total_size.to_bytes(4, "big")
+        + checksum.to_bytes(4, "big")
+    )
+
+    frame = FAST_PREAMBLE + header + payload
+
+    bits = _pack_bits(frame)
+
+    sync = gen_tone(FREQ1, sync_duration, fs)
+    gap = np.zeros(int(0.02 * fs), dtype=np.float32)
+    chunks = [sync, gap]
+    for bit in bits:
+        f = FREQ1 if bit == 1 else FREQ0
+        chunks.append(gen_tone(f, symbol_duration, fs))
+
+    wave = np.concatenate(chunks)
+    marker = build_end_marker_wave(fs=fs)
+    return np.concatenate([wave, marker]).astype(np.float32)
+
+
+def fast_decode_file_transfer_from_wave(
+    samples: np.ndarray,
+    fs=FS,
+    symbol_ms: int = 3,
+) -> tuple | None:
+    """
+    Декодирует fast-поток: ищет синхротон, читает биты,
+    находит преамбулу, разбирает заголовок + данные, проверяет CRC32.
+    Возвращает (filename, payload) или None.
+    """
+    samples = np.asarray(samples, dtype=np.float32)
+    symbol_duration = symbol_ms / 1000
+
+    sync_end = _find_sync_end(samples, fs)
+    if sync_end < 0:
+        return None
+
+    start = _find_data_start(samples, sync_end, fs)
+    tone_len = max(int(symbol_duration * fs), 1)
+
+    bits = []
+    i = start
+    while i + tone_len <= len(samples):
+        seg = samples[i:i + tone_len]
+        bits.append(_decode_bit(seg, fs))
+        i += tone_len
+
+    preamble_bits = _pack_bits(FAST_PREAMBLE)
+    data = _unpack_bytes(bits)
+
+    # Ищем преамбулу в байтовом потоке
+    idx = data.find(FAST_PREAMBLE)
+    if idx < 0:
+        return None
+
+    rest = data[idx + len(FAST_PREAMBLE):]
+    if len(rest) < 1:
+        return None
+
+    # Формат: name_len(1) + name(name_len) + size(4) + crc32(4) + payload
+    pos = 0
+    name_len = rest[pos]
+    pos += 1
+    if pos + name_len + 8 > len(rest):
+        return None
+    name = rest[pos:pos + name_len].decode("utf-8", errors="replace")
+    pos += name_len
+    total_size = int.from_bytes(rest[pos:pos + 4], "big")
+    pos += 4
+    stored_crc = int.from_bytes(rest[pos:pos + 4], "big")
+    pos += 4
+    payload = rest[pos:pos + total_size]
+    if len(payload) != total_size:
+        return None
+    if crc32(payload) != stored_crc:
+        return None
+    return name, payload
+
+
+# Для обратной совместимости: alias
+fast_decode_from_wave = fast_decode_file_transfer_from_wave
