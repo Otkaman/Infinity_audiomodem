@@ -21,9 +21,9 @@ import numpy as np
 FS = 44100              # частота дискретизации
 FREQ0 = 2000.0           # тон для бита 0
 FREQ1 = 3000.0           # тон для бита 1
-SYMBOL_DURATION = 0.04   # более надежный вариант для реальной передачи
-SYNC_TONE_DURATION = 1.2 # длительность калибровочного тона
-GAP_DURATION = 0.2       # тишина между sync-тоном и данными
+SYMBOL_DURATION = 0.08   # более длинный и устойчивый символ
+SYNC_TONE_DURATION = 1.0 # длительность калибровочного тона
+GAP_DURATION = 0.15      # тишина между sync-тоном и данными
 PREAMBLE = bytes([0xAA, 0xAA, 0xAA, 0xAA])
 
 
@@ -86,6 +86,7 @@ def encode_frame_to_wave(
     for bit in bits:
         f = FREQ1 if bit == 1 else FREQ0
         chunks.append(gen_tone(f, symbol_duration, fs))
+        chunks.append(gap)
 
     chunks.append(np.zeros(int(0.05 * fs), dtype=np.float32))
     wave = np.concatenate(chunks)
@@ -278,6 +279,7 @@ def _decode_frame_from_wave(
     fs=FS,
     max_payload_len=255,
     symbol_duration=SYMBOL_DURATION,
+    gap_duration=GAP_DURATION,
     start_index: int = 0,
 ):
     samples = np.asarray(samples, dtype=np.float32)
@@ -286,44 +288,71 @@ def _decode_frame_from_wave(
         return None, None
 
     start = _find_data_start(samples, sync_end, fs)
-    bit_len = int(symbol_duration * fs)
+    tone_len = max(int(symbol_duration * fs), 1)
+    step_len = tone_len + max(int(gap_duration * fs), 1)
 
     bits = []
     i = start
     max_bits = 10 * (4 + 1 + max_payload_len + 1) + 20
-    while i + bit_len <= len(samples) and len(bits) < max_bits:
-        seg = samples[i:i + bit_len]
+    while i + tone_len <= len(samples) and len(bits) < max_bits:
+        seg = samples[i:i + tone_len]
         bits.append(_decode_bit(seg, fs))
-        i += bit_len
+        i += step_len
 
-    frame_bytes = _bits_to_frame_bytes(bits)
-    idx = frame_bytes.find(PREAMBLE)
-    if idx < 0:
-        return None, None
+        frame_bytes = _bits_to_frame_bytes(bits)
+        idx = frame_bytes.find(PREAMBLE)
+        if idx < 0:
+            continue
 
-    rest = frame_bytes[idx + len(PREAMBLE):]
-    if len(rest) < 1:
-        return None, None
-    length = rest[0]
-    if len(rest) < 1 + length + 1:
-        return None, None
-    payload = rest[1:1 + length]
-    crc_received = rest[1 + length]
-    crc_calc = crc8(bytes([length]) + payload)
-    if crc_calc != crc_received:
-        return None, None
+        rest = frame_bytes[idx + len(PREAMBLE):]
+        if len(rest) < 1:
+            continue
+        length = rest[0]
+        if len(rest) < 1 + length + 1:
+            continue
+        payload = rest[1:1 + length]
+        crc_received = rest[1 + length]
+        crc_calc = crc8(bytes([length]) + payload)
+        if crc_calc != crc_received:
+            continue
 
-    next_index = max(i + int(0.05 * fs), start + len(bits) * bit_len + int(GAP_DURATION * fs))
-    return payload, next_index
+        next_index = max(i + int(0.05 * fs), start + len(bits) * step_len)
+        return payload, next_index
+
+    return None, None
 
 
-def decode_from_wave(samples: np.ndarray, fs=FS, max_payload_len=255, symbol_duration=SYMBOL_DURATION):
-    """Возвращает payload (bytes) или None, если не удалось распознать/CRC не сошёлся."""
-    payload, _ = _decode_frame_from_wave(
+def decode_frame_from_wave(
+    samples: np.ndarray,
+    fs=FS,
+    max_payload_len=255,
+    symbol_duration=SYMBOL_DURATION,
+    gap_duration=GAP_DURATION,
+):
+    """Возвращает (payload, next_index) для одного кадра или (None, None)."""
+    return _decode_frame_from_wave(
         samples,
         fs=fs,
         max_payload_len=max_payload_len,
         symbol_duration=symbol_duration,
+        gap_duration=gap_duration,
+    )
+
+
+def decode_from_wave(
+    samples: np.ndarray,
+    fs=FS,
+    max_payload_len=255,
+    symbol_duration=SYMBOL_DURATION,
+    gap_duration=GAP_DURATION,
+):
+    """Возвращает payload (bytes) или None, если не удалось распознать/CRC не сошёлся."""
+    payload, _ = decode_frame_from_wave(
+        samples,
+        fs=fs,
+        max_payload_len=max_payload_len,
+        symbol_duration=symbol_duration,
+        gap_duration=gap_duration,
     )
     return payload
 
@@ -332,6 +361,7 @@ def decode_file_transfer_from_wave(
     samples: np.ndarray,
     fs=FS,
     symbol_duration=SYMBOL_DURATION,
+    gap_duration=GAP_DURATION,
 ):
     """Возвращает (filename, payload) после завершения передачи файла или None."""
     samples = np.asarray(samples, dtype=np.float32)
@@ -341,11 +371,12 @@ def decode_file_transfer_from_wave(
     step = max(int(0.05 * fs), 1)
 
     while offset < len(samples):
-        decoded = decode_from_wave(
+        decoded, next_index = decode_frame_from_wave(
             samples[offset:],
             fs=fs,
             max_payload_len=255,
             symbol_duration=symbol_duration,
+            gap_duration=gap_duration,
         )
         if decoded is None:
             offset += step
@@ -378,6 +409,6 @@ def decode_file_transfer_from_wave(
                 if len(reconstructed) >= metadata["total_size"]:
                     return metadata["filename"], reconstructed[:metadata["total_size"]]
 
-        offset += int(0.3 * fs)
+        offset += max(next_index or step, step)
 
     return None
