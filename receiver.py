@@ -53,7 +53,7 @@ def load_wav(path: str, target_fs: int = FS) -> np.ndarray:
 
 def main():
     ap = argparse.ArgumentParser()
-    src = ap.add_mutually_exclusive_group(required=True)
+    src = ap.add_mutually_exclusive_group()
     src.add_argument("--wav", help="Декодировать готовый WAV-файл (для отладки)")
     ap.add_argument("--out", help="Сохранить декодированные байты в файл (иначе печать в консоль)")
     ap.add_argument("--chunk-seconds", type=float, default=5.0,
