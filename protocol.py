@@ -40,6 +40,11 @@ def crc8(data: bytes) -> int:
     return crc
 
 
+def crc32(data: bytes) -> int:
+    import zlib
+    return zlib.crc32(data) & 0xFFFFFFFF
+
+
 def build_frame(payload: bytes) -> bytes:
     if len(payload) > 255:
         raise ValueError("payload слишком длинный для этого простого протокола (макс 255 байт)")
@@ -121,6 +126,7 @@ def build_file_transfer_frames(filename: str, payload: bytes, chunk_size: int = 
 
     total_size = len(payload)
     chunk_count = 0 if total_size == 0 else math.ceil(total_size / chunk_size)
+    checksum = crc32(payload).to_bytes(4, "big")
     metadata_payload = (
         b"\x00"
         + bytes([len(name_bytes)])
@@ -128,6 +134,7 @@ def build_file_transfer_frames(filename: str, payload: bytes, chunk_size: int = 
         + total_size.to_bytes(4, "big")
         + chunk_count.to_bytes(4, "big")
         + chunk_size.to_bytes(2, "big")
+        + checksum
     )
     frames = [build_frame(metadata_payload)]
     for offset in range(0, len(payload), chunk_size):
@@ -412,10 +419,12 @@ def decode_file_transfer_from_wave(
             name_bytes = payload[1:1 + name_len]
             total_size = int.from_bytes(payload[1 + name_len:5 + name_len], "big")
             chunk_count = int.from_bytes(payload[5 + name_len:9 + name_len], "big")
+            checksum = int.from_bytes(payload[11 + name_len:15 + name_len], "big")
             metadata = {
                 "filename": name_bytes.decode("utf-8"),
                 "total_size": total_size,
                 "chunk_count": chunk_count,
+                "checksum": checksum,
             }
             chunks = {}
         elif frame_type == 0x01 and metadata is not None:
@@ -432,7 +441,10 @@ def decode_file_transfer_from_wave(
                     chunk for _, chunk in sorted(chunks.items())
                 )
                 if len(reconstructed) >= metadata["total_size"]:
-                    return metadata["filename"], reconstructed[:metadata["total_size"]]
+                    data = reconstructed[:metadata["total_size"]]
+                    if crc32(data) == metadata["checksum"]:
+                        return metadata["filename"], data
+                    return None
 
         offset += max(next_index or step, step)
 

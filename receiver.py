@@ -2,10 +2,8 @@
 Приёмник. Слушает микрофон и декодирует данные.
 
 Использование:
-  python3 receiver.py --listen 15                # слушать 15 секунд с микрофона
-  python3 receiver.py --listen 15 --out result.bin
-  python3 receiver.py --wav received.wav          # декодировать готовый файл (отладка)
-  python3 receiver.py --out result.bin           # слушать до успешной декодировки без жёсткого лимита
+  python3 receiver.py --out result.bin           # слушать до маркера завершения
+  python3 receiver.py --wav received.wav         # декодировать готовый WAV-файл (отладка)
 """
 
 import argparse
@@ -13,16 +11,6 @@ import sys
 import numpy as np
 
 from protocol import decode_from_wave, detect_end_marker, FS
-
-
-def record_audio(seconds: float, fs: int = FS) -> np.ndarray:
-    import sounddevice as sd
-    seconds = max(float(seconds), 0.1)
-    print(f"[receiver] слушаю {seconds:.1f} сек...")
-    audio = sd.rec(int(seconds * fs), samplerate=fs, channels=1, dtype="float32")
-    sd.wait()
-    print("[receiver] запись окончена, декодирую...")
-    return audio.flatten()
 
 
 def record_until_end_marker(seconds: float, fs: int = FS) -> np.ndarray:
@@ -66,14 +54,10 @@ def load_wav(path: str, target_fs: int = FS) -> np.ndarray:
 def main():
     ap = argparse.ArgumentParser()
     src = ap.add_mutually_exclusive_group(required=True)
-    src.add_argument("--listen", type=float, default=None,
-                     help="Слушать микрофон N секунд. Если не указан, слушать блоками по --chunk-seconds до успешной декодировки")
     src.add_argument("--wav", help="Декодировать готовый WAV-файл (для отладки)")
     ap.add_argument("--out", help="Сохранить декодированные байты в файл (иначе печать в консоль)")
     ap.add_argument("--chunk-seconds", type=float, default=5.0,
-                     help="Длина блока записи, если --listen не указан")
-    ap.add_argument("--retries", type=int, default=0,
-                     help="Сколько раз повторить после неудачи при явном --listen; 0 = без лимита")
+                     help="Длина блока записи до следующей проверки маркера завершения")
     args = ap.parse_args()
 
     if args.wav:
@@ -81,25 +65,8 @@ def main():
         payload = decode_from_wave(audio)
     else:
         payload = None
-        attempt = 0
-        while payload is None:
-            if args.listen is not None:
-                listen_seconds = args.listen
-                max_attempts = None if args.retries <= 0 else args.retries + 1
-            else:
-                listen_seconds = max(args.chunk_seconds, 0.1)
-                max_attempts = None
-
-            attempt += 1
-            if args.listen is None:
-                audio = record_until_end_marker(listen_seconds)
-            else:
-                audio = record_audio(listen_seconds)
-            payload = decode_from_wave(audio)
-            if payload is None:
-                if max_attempts is not None and attempt >= max_attempts:
-                    break
-                print("[receiver] не удалось декодировать, пробую снова...")
+        audio = record_until_end_marker(max(args.chunk_seconds, 0.1))
+        payload = decode_from_wave(audio)
 
     if payload is None:
         print("[receiver] ОШИБКА: не удалось распознать сигнал", file=sys.stderr)

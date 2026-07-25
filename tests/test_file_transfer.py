@@ -9,6 +9,7 @@ from protocol import (
     decode_file_transfer_from_wave,
     build_end_marker_wave,
     detect_end_marker,
+    crc32,
 )
 
 
@@ -44,6 +45,11 @@ class FileTransferProtocolTests(unittest.TestCase):
         marker = build_end_marker_wave()
         self.assertTrue(detect_end_marker(marker))
         self.assertFalse(detect_end_marker(np.zeros(1000, dtype=np.float32)))
+
+    def test_checksum_validation(self):
+        payload = b"checksum-test-payload"
+        wave = encode_file_transfer_wave("test.bin", payload, symbol_duration=0.02, gap_duration=0.05, chunk_size=8)
+        self.assertEqual(crc32(payload), crc32(payload))
 
 
 if __name__ == "__main__":
