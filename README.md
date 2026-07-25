@@ -24,6 +24,38 @@ python3 sender.py --file text.txt --play
 python3 receiver.py --listen 15 --out received.bin
 ```
 
+## Новые команды
+
+Отправка файла:
+
+```bash
+python3 sender.py --file text.txt --play
+```
+
+Отправка текста:
+
+```bash
+python3 sender.py --text "привет" --play
+```
+
+Приём и сохранение файла:
+
+```bash
+python3 receiver.py --out received.bin
+```
+
+Приём с явным временем прослушивания:
+
+```bash
+python3 receiver.py --listen 15 --out received.bin
+```
+
+Приём блоками по 10 секунд до обнаружения маркера завершения:
+
+```bash
+python3 receiver.py --chunk-seconds 10 --out received.bin
+```
+
 ## Если `sounddevice` не ставится
 
 На macOS иногда нужен PortAudio. Установите его через Homebrew:
