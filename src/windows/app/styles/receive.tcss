@@ -1,0 +1,93 @@
+#receive_container {
+    margin: 1 2;
+}
+
+#subtitle_container {
+    height: 9;
+    width: 100%;
+    background: #1a1a2e;
+    border: thick #2a2a45;
+    margin: 0 0 1 0;
+
+    align: center top;
+}
+
+#subtitle {
+    color: #00bcd4;
+    text-style: bold;  
+}
+
+#support_text {
+    color: #8888aa;
+    text-style: italic;
+    margin: 0 0 1 0;
+    width: 100%;
+}
+
+#output {
+    height: 7;
+    margin: 0 0 1 0;
+    padding: 1 2;
+    border: solid #2a2a45;
+    background: #1a1a2e;
+    color: #e0e0ff;
+    overflow-y: auto;
+}
+
+#button_row {
+    height: auto;
+    align: center middle;
+    margin: 1 0;
+}
+
+#listen-btn {
+    background: #008c9e;
+    color: #e0e0ff;
+}
+
+#listen-btn:hover {
+    background: #00bcd4;
+}
+
+/* Stop – кнопка с предупреждением (error) */
+#stop-btn {
+    background: #f44336;
+    color: white;
+    border: solid #f44336;
+}
+
+#stop-btn:hover {
+    background: #e53935;          /* чуть светлее при наведении */
+}
+
+/* Back – нейтральная кнопка */
+#back-btn {
+    background: #1a1a2e;
+    color: #8888aa;
+    border: solid #2a2a45;
+}
+
+#back-btn:hover {
+    background: #23233a;
+    color: #e0e0ff;
+}
+
+/* Прогресс-бар */
+#progress {
+    margin: 1 0;
+    height: 1;
+    background: #1a1a2e;
+}
+
+#progress > .bar {
+    color: #00bcd4;
+}
+
+/* Статусная строка "Idle" */
+#status {
+    color: #5a5a7a;
+    text-style: italic;
+    text-align: center;
+    margin: 1 0;
+    width: 100%;
+}
