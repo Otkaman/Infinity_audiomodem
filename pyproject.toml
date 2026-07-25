@@ -1,0 +1,11 @@
+[project]
+name = "infinity-audiomodem"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=2.4.6",
+    "sounddevice>=0.5.5",
+    "textual>=8.2.8",
+]

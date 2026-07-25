@@ -1,0 +1,81 @@
+#transmit_container {
+    margin: 1 2;
+}
+
+#subtitle_container {
+    height: 9;
+    width: 100%;
+    background: #1a1a2e;
+    border: thick #2a2a45;
+    margin: 0 0 1 0;
+
+    align: center top;
+}
+
+#subtitle {
+    color: #00bcd4;
+    text-style: bold;  
+}
+
+#support_text {
+    color: #8888aa;
+    text-style: italic;
+    margin: 0 0 1 0;
+    width: 100%;
+}
+
+#data_input {
+    height: 12;
+    margin: 0 0 1 0;
+    border: solid #2a2a45;
+    background: #1a1a2e;
+    color: #e0e0ff;
+}
+
+#button_row {
+    height: auto;
+    align: right middle;
+}
+
+#send_btn, #back_btn {
+    margin: 0 1;
+    width: 20;
+}
+
+#send_btn {
+    background: #008c9e;
+    color: #e0e0ff;
+}
+
+#send_btn:hover {
+    background: #00bcd4;
+}
+
+#back_btn {
+    background: transparent;
+    color: #8888aa;
+    border: dashed #2a2a45;
+}
+
+#back_btn:hover {
+    color: #e0e0ff;
+    border: solid #00bcd4;
+}
+
+#progress_bar {
+    margin: 1 0;
+    height: 1;
+    background: #1a1a2e;
+}
+
+#progress_bar > .bar {
+    color: #00bcd4;
+}
+
+#status_text {
+    color: #5a5a7a;
+    text-style: italic;
+    text-align: center;
+    margin: 1 1 1 0;
+    width: auto;
+}
