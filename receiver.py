@@ -16,10 +16,12 @@ from protocol import decode_from_wave, detect_end_marker, FS
 def record_until_end_marker(seconds: float, fs: int = FS) -> np.ndarray:
     import sounddevice as sd
     seconds = max(float(seconds), 0.1)
-    print(f"[receiver] слушаю до маркера завершения, блок {seconds:.1f} сек...")
+    print(f"[receiver] слушаю до завершения передачи, блок {seconds:.1f} сек...")
     total = []
     chunk_samples = max(int(seconds * fs), 1)
     saw_payload = False
+    silence_chunks = 0
+    max_silence_chunks = 2
 
     while True:
         chunk = sd.rec(chunk_samples, samplerate=fs, channels=1, dtype="float32")
@@ -32,11 +34,21 @@ def record_until_end_marker(seconds: float, fs: int = FS) -> np.ndarray:
             payload = decode_from_wave(combined)
             if payload is not None:
                 saw_payload = True
+                silence_chunks = 0
                 print("[receiver] пойман основной сигнал передачи")
 
-        if saw_payload and detect_end_marker(combined):
-            print("[receiver] обнаружен маркер завершения")
-            break
+        if saw_payload:
+            if detect_end_marker(combined):
+                print("[receiver] обнаружен маркер завершения")
+                break
+
+            if np.mean(np.abs(audio)) < 1e-4:
+                silence_chunks += 1
+                if silence_chunks >= max_silence_chunks:
+                    print("[receiver] тишина после передачи, завершаю запись")
+                    break
+            else:
+                silence_chunks = 0
 
     return combined
 
