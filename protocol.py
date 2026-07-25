@@ -178,10 +178,30 @@ def _goertzel_power(samples: np.ndarray, freq: float, fs: int) -> float:
     for x in samples:
         s = x + coeff * s_prev - s_prev2
         s_prev2 = s_prev
-        s_prev = x if False else s  # keep clarity
         s_prev = s
     power = s_prev2 ** 2 + s_prev ** 2 - coeff * s_prev * s_prev2
     return power
+
+
+def _bandpower(samples: np.ndarray, fs: int, low: float, high: float) -> float:
+    if len(samples) == 0:
+        return 0.0
+    samples = np.asarray(samples, dtype=np.float32)
+    n = len(samples)
+    freqs = np.fft.rfftfreq(n, 1.0 / fs)
+    spectrum = np.abs(np.fft.rfft(samples))
+    mask = (freqs >= low) & (freqs <= high)
+    if not np.any(mask):
+        return 0.0
+    return float(np.mean(spectrum[mask]))
+
+
+def _filter_noise(samples: np.ndarray) -> np.ndarray:
+    if len(samples) < 4:
+        return samples
+    samples = np.asarray(samples, dtype=np.float32)
+    window = np.hanning(len(samples))
+    return samples * window
 
 
 def _find_sync_end(samples: np.ndarray, fs=FS, start_index: int = 0) -> int:
@@ -190,7 +210,7 @@ def _find_sync_end(samples: np.ndarray, fs=FS, start_index: int = 0) -> int:
         start_index = 0
     if start_index >= len(samples):
         return -1
-    win = int(0.02 * fs)
+    win = int(0.04 * fs)
     step = win // 2
     tone_started = False
     i = start_index
@@ -198,17 +218,24 @@ def _find_sync_end(samples: np.ndarray, fs=FS, start_index: int = 0) -> int:
         seg = samples[i:i + win]
         energy = np.sum(seg.astype(np.float64) ** 2) / win
         p1 = _goertzel_power(seg, FREQ1, fs) / win
-        if not tone_started and p1 > 0.05:
+        if not tone_started and p1 > 0.02:
             tone_started = True
-        if tone_started and energy < 0.01:
+        if tone_started and energy < 0.005:
             return i
         i += step
     return -1
 
 
 def _decode_bit(seg: np.ndarray, fs=FS) -> int:
+    seg = _filter_noise(seg)
     p0 = _goertzel_power(seg, FREQ0, fs)
     p1 = _goertzel_power(seg, FREQ1, fs)
+    p0_band = _bandpower(seg, fs, FREQ0 - 120.0, FREQ0 + 120.0)
+    p1_band = _bandpower(seg, fs, FREQ1 - 120.0, FREQ1 + 120.0)
+    if p1_band > p0_band * 1.1 and p1 > p0 * 1.1:
+        return 1
+    if p0_band > p1_band * 1.1 and p0 > p1 * 1.1:
+        return 0
     return 1 if p1 > p0 else 0
 
 
@@ -240,7 +267,7 @@ def _find_data_start(samples: np.ndarray, from_index: int, fs=FS) -> int:
     while i + win < len(samples):
         seg = samples[i:i + win]
         energy = np.sum(seg.astype(np.float64) ** 2) / win
-        if energy > 0.05:
+        if energy > 0.01:
             return i
         i += step
     return from_index + int(GAP_DURATION * fs * 0.5)  # fallback
