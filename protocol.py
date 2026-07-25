@@ -15,12 +15,13 @@
 где начинается передача, и пауза тишины перед битовым потоком.
 """
 
+import math
 import numpy as np
 
 FS = 44100              # частота дискретизации
 FREQ0 = 2000.0           # тон для бита 0
 FREQ1 = 3000.0           # тон для бита 1
-SYMBOL_DURATION = 0.08   # длительность одного бита, сек (~12.5 бод — с запасом на шум динамика/микро)
+SYMBOL_DURATION = 0.02   # более надежный вариант для реальной передачи
 SYNC_TONE_DURATION = 1.0 # длительность калибровочного тона
 GAP_DURATION = 0.15      # тишина между sync-тоном и данными
 PREAMBLE = bytes([0xAA, 0xAA, 0xAA, 0xAA])
@@ -69,21 +70,94 @@ def gen_tone(freq, duration, fs=FS, fade=0.003):
     return wave.astype(np.float32)
 
 
-def encode_to_wave(payload: bytes, fs=FS) -> np.ndarray:
-    frame = build_frame(payload)
+def encode_frame_to_wave(
+    frame: bytes,
+    fs=FS,
+    symbol_duration=SYMBOL_DURATION,
+    sync_tone_duration=SYNC_TONE_DURATION,
+    gap_duration=GAP_DURATION,
+) -> np.ndarray:
     bits = bytes_to_uart_bits(frame)
 
-    sync = gen_tone(FREQ1, SYNC_TONE_DURATION, fs)
-    gap = np.zeros(int(GAP_DURATION * fs), dtype=np.float32)
+    sync = gen_tone(FREQ1, sync_tone_duration, fs)
+    gap = np.zeros(int(gap_duration * fs), dtype=np.float32)
 
     chunks = [sync, gap]
     for bit in bits:
         f = FREQ1 if bit == 1 else FREQ0
-        chunks.append(gen_tone(f, SYMBOL_DURATION, fs))
+        chunks.append(gen_tone(f, symbol_duration, fs))
 
-    # немного тишины в конце, чтобы декодер не обрезал последний символ
-    chunks.append(np.zeros(int(0.1 * fs), dtype=np.float32))
+    chunks.append(np.zeros(int(0.05 * fs), dtype=np.float32))
+    wave = np.concatenate(chunks)
+    return (wave * 0.8).astype(np.float32)
 
+
+def encode_to_wave(
+    payload: bytes,
+    fs=FS,
+    symbol_duration=SYMBOL_DURATION,
+    sync_tone_duration=SYNC_TONE_DURATION,
+    gap_duration=GAP_DURATION,
+) -> np.ndarray:
+    frame = build_frame(payload)
+    return encode_frame_to_wave(
+        frame,
+        fs=fs,
+        symbol_duration=symbol_duration,
+        sync_tone_duration=sync_tone_duration,
+        gap_duration=gap_duration,
+    )
+
+
+def build_file_transfer_frames(filename: str, payload: bytes, chunk_size: int = 200) -> list[bytes]:
+    if chunk_size <= 0:
+        raise ValueError("chunk_size must be > 0")
+    name_bytes = filename.encode("utf-8")
+    if len(name_bytes) > 255:
+        raise ValueError("filename too long")
+
+    total_size = len(payload)
+    chunk_count = 0 if total_size == 0 else math.ceil(total_size / chunk_size)
+    metadata_payload = (
+        b"\x00"
+        + bytes([len(name_bytes)])
+        + name_bytes
+        + total_size.to_bytes(4, "big")
+        + chunk_count.to_bytes(4, "big")
+        + chunk_size.to_bytes(2, "big")
+    )
+    frames = [build_frame(metadata_payload)]
+    for offset in range(0, len(payload), chunk_size):
+        chunk = payload[offset:offset + chunk_size]
+        data_payload = b"\x01" + offset.to_bytes(4, "big") + chunk
+        frames.append(build_frame(data_payload))
+    return frames
+
+
+def encode_file_transfer_wave(
+    filename: str,
+    payload: bytes,
+    fs=FS,
+    symbol_duration=SYMBOL_DURATION,
+    sync_tone_duration=SYNC_TONE_DURATION,
+    gap_duration=GAP_DURATION,
+    chunk_size: int = 200,
+) -> np.ndarray:
+    frames = build_file_transfer_frames(filename, payload, chunk_size=chunk_size)
+    chunks = []
+    for frame in frames:
+        chunks.append(
+            encode_frame_to_wave(
+                frame,
+                fs=fs,
+                symbol_duration=symbol_duration,
+                sync_tone_duration=sync_tone_duration,
+                gap_duration=gap_duration,
+            )
+        )
+        chunks.append(np.zeros(int(gap_duration * fs), dtype=np.float32))
+    if not chunks:
+        return np.zeros(0, dtype=np.float32)
     wave = np.concatenate(chunks)
     return (wave * 0.8).astype(np.float32)
 
@@ -108,12 +182,16 @@ def _goertzel_power(samples: np.ndarray, freq: float, fs: int) -> float:
     return power
 
 
-def _find_sync_end(samples: np.ndarray, fs=FS) -> int:
+def _find_sync_end(samples: np.ndarray, fs=FS, start_index: int = 0) -> int:
     """Ищем момент, где заканчивается калибровочный тон (после него — тишина)."""
+    if start_index < 0:
+        start_index = 0
+    if start_index >= len(samples):
+        return -1
     win = int(0.02 * fs)
     step = win // 2
     tone_started = False
-    i = 0
+    i = start_index
     while i + win < len(samples):
         seg = samples[i:i + win]
         energy = np.sum(seg.astype(np.float64) ** 2) / win
@@ -166,20 +244,23 @@ def _find_data_start(samples: np.ndarray, from_index: int, fs=FS) -> int:
     return from_index + int(GAP_DURATION * fs * 0.5)  # fallback
 
 
-def decode_from_wave(samples: np.ndarray, fs=FS, max_payload_len=255):
-    """Возвращает payload (bytes) или None, если не удалось распознать/CRC не сошёлся."""
+def _decode_frame_from_wave(
+    samples: np.ndarray,
+    fs=FS,
+    max_payload_len=255,
+    symbol_duration=SYMBOL_DURATION,
+    start_index: int = 0,
+):
     samples = np.asarray(samples, dtype=np.float32)
-
-    sync_end = _find_sync_end(samples, fs)
+    sync_end = _find_sync_end(samples, fs, start_index=start_index)
     if sync_end < 0:
-        return None
+        return None, None
 
     start = _find_data_start(samples, sync_end, fs)
-    bit_len = int(SYMBOL_DURATION * fs)
+    bit_len = int(symbol_duration * fs)
 
     bits = []
     i = start
-    # с запасом читаем достаточно бит на преамбулу+длину+payload+crc
     max_bits = 10 * (4 + 1 + max_payload_len + 1) + 20
     while i + bit_len <= len(samples) and len(bits) < max_bits:
         seg = samples[i:i + bit_len]
@@ -187,21 +268,87 @@ def decode_from_wave(samples: np.ndarray, fs=FS, max_payload_len=255):
         i += bit_len
 
     frame_bytes = _bits_to_frame_bytes(bits)
-
-    # ищем преамбулу 0xAA 0xAA 0xAA 0xAA в раскодированных байтах
     idx = frame_bytes.find(PREAMBLE)
     if idx < 0:
-        return None
+        return None, None
 
     rest = frame_bytes[idx + len(PREAMBLE):]
     if len(rest) < 1:
-        return None
+        return None, None
     length = rest[0]
     if len(rest) < 1 + length + 1:
-        return None
+        return None, None
     payload = rest[1:1 + length]
     crc_received = rest[1 + length]
     crc_calc = crc8(bytes([length]) + payload)
     if crc_calc != crc_received:
-        return None
+        return None, None
+
+    next_index = max(i + int(0.05 * fs), start + len(bits) * bit_len + int(GAP_DURATION * fs))
+    return payload, next_index
+
+
+def decode_from_wave(samples: np.ndarray, fs=FS, max_payload_len=255, symbol_duration=SYMBOL_DURATION):
+    """Возвращает payload (bytes) или None, если не удалось распознать/CRC не сошёлся."""
+    payload, _ = _decode_frame_from_wave(
+        samples,
+        fs=fs,
+        max_payload_len=max_payload_len,
+        symbol_duration=symbol_duration,
+    )
     return payload
+
+
+def decode_file_transfer_from_wave(
+    samples: np.ndarray,
+    fs=FS,
+    symbol_duration=SYMBOL_DURATION,
+):
+    """Возвращает (filename, payload) после завершения передачи файла или None."""
+    samples = np.asarray(samples, dtype=np.float32)
+    metadata = None
+    chunks = {}
+    offset = 0
+    step = max(int(0.05 * fs), 1)
+
+    while offset < len(samples):
+        decoded = decode_from_wave(
+            samples[offset:],
+            fs=fs,
+            max_payload_len=255,
+            symbol_duration=symbol_duration,
+        )
+        if decoded is None:
+            offset += step
+            continue
+
+        frame_type = decoded[0] if decoded else None
+        if frame_type == 0x00:
+            name_len = decoded[1]
+            name_bytes = decoded[2:2 + name_len]
+            total_size = int.from_bytes(decoded[2 + name_len:6 + name_len], "big")
+            chunk_count = int.from_bytes(decoded[6 + name_len:10 + name_len], "big")
+            metadata = {
+                "filename": name_bytes.decode("utf-8"),
+                "total_size": total_size,
+                "chunk_count": chunk_count,
+            }
+            chunks = {}
+        elif frame_type == 0x01 and metadata is not None:
+            offset_value = int.from_bytes(decoded[1:5], "big")
+            chunk = decoded[5:]
+            chunks[offset_value] = chunk
+        else:
+            break
+
+        if metadata is not None and metadata["chunk_count"] > 0:
+            if len(chunks) == metadata["chunk_count"]:
+                reconstructed = b"".join(
+                    chunk for _, chunk in sorted(chunks.items())
+                )
+                if len(reconstructed) >= metadata["total_size"]:
+                    return metadata["filename"], reconstructed[:metadata["total_size"]]
+
+        offset += int(0.3 * fs)
+
+    return None
