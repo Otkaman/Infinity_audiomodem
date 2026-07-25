@@ -109,9 +109,11 @@ def encode_to_wave(
     )
 
 
-def build_file_transfer_frames(filename: str, payload: bytes, chunk_size: int = 200) -> list[bytes]:
+def build_file_transfer_frames(filename: str, payload: bytes, chunk_size: int = 120) -> list[bytes]:
     if chunk_size <= 0:
         raise ValueError("chunk_size must be > 0")
+    if chunk_size > 120:
+        chunk_size = 120
     name_bytes = filename.encode("utf-8")
     if len(name_bytes) > 255:
         raise ValueError("filename too long")

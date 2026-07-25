@@ -1,11 +1,13 @@
 [project]
 name = "infinity-audiomodem"
 version = "0.1.0"
-description = "Add your description here"
+description = "Audio-based file transfer prototype"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "numpy>=2.4.6",
     "sounddevice>=0.5.5",
+    "scipy>=1.14.0",
     "textual>=8.2.8",
+    "regex>=2024.5.15",
 ]

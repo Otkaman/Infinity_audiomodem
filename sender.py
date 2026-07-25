@@ -10,10 +10,11 @@
 """
 
 import argparse
+import os
 import sys
 import numpy as np
 
-from protocol import encode_to_wave, FS
+from protocol import encode_file_transfer_wave, FS
 
 
 def save_wav(path: str, wave: np.ndarray, fs: int = FS):
@@ -36,32 +37,39 @@ def save_wav(path: str, wave: np.ndarray, fs: int = FS):
 def play_audio(wave: np.ndarray, fs: int = FS):
     import sounddevice as sd
     print("[sender] воспроизведение...")
-    sd.play(wave, fs)
-    sd.wait()
-    print("[sender] готово")
+    try:
+        sd.play(wave, fs)
+        sd.wait()
+    except KeyboardInterrupt:
+        sd.stop()
+        print("[sender] остановлено")
+        raise
+    except Exception:
+        sd.stop()
+        raise
+    else:
+        print("[sender] готово")
 
 
 def main():
     ap = argparse.ArgumentParser()
     src = ap.add_mutually_exclusive_group(required=True)
     src.add_argument("--text", help="Текст для отправки (UTF-8)")
-    src.add_argument("--file", help="Путь к файлу для отправки (бинарный, до 255 байт)")
+    src.add_argument("--file", help="Путь к файлу для отправки")
     ap.add_argument("--play", action="store_true", help="Проиграть через динамик")
     ap.add_argument("--save", help="Сохранить сигнал в WAV-файл")
+    ap.add_argument("--chunk-size", type=int, default=120, help="Размер чанка для передачи файла (рекомендуется 120 или меньше)")
     args = ap.parse_args()
 
     if args.text is not None:
         payload = args.text.encode("utf-8")
+        filename = "text.txt"
     else:
         with open(args.file, "rb") as f:
             payload = f.read()
+        filename = os.path.basename(args.file)
 
-    if len(payload) > 255:
-        print(f"[sender] ОШИБКА: payload {len(payload)} байт > 255. "
-              f"Для больших данных нужно резать на чанки (см. README).", file=sys.stderr)
-        sys.exit(1)
-
-    wave = encode_to_wave(payload)
+    wave = encode_file_transfer_wave(filename, payload, chunk_size=args.chunk_size)
     print(f"[sender] payload: {len(payload)} байт, длительность сигнала: {len(wave)/FS:.1f} сек")
 
     if args.save:
