@@ -19,14 +19,26 @@ def record_until_end_marker(seconds: float, fs: int = FS) -> np.ndarray:
     print(f"[receiver] слушаю до маркера завершения, блок {seconds:.1f} сек...")
     total = []
     chunk_samples = max(int(seconds * fs), 1)
+    saw_payload = False
+
     while True:
         chunk = sd.rec(chunk_samples, samplerate=fs, channels=1, dtype="float32")
         sd.wait()
-        total.append(chunk.flatten())
-        if detect_end_marker(np.concatenate(total)):
+        audio = chunk.flatten()
+        total.append(audio)
+        combined = np.concatenate(total)
+
+        if not saw_payload:
+            payload = decode_from_wave(combined)
+            if payload is not None:
+                saw_payload = True
+                print("[receiver] пойман основной сигнал передачи")
+
+        if saw_payload and detect_end_marker(combined):
             print("[receiver] обнаружен маркер завершения")
             break
-    return np.concatenate(total)
+
+    return combined
 
 
 def load_wav(path: str, target_fs: int = FS) -> np.ndarray:
