@@ -1,10 +1,14 @@
 import unittest
 
+import numpy as np
+
 from protocol import (
     encode_to_wave,
     decode_from_wave,
     encode_file_transfer_wave,
     decode_file_transfer_from_wave,
+    build_end_marker_wave,
+    detect_end_marker,
 )
 
 
@@ -35,6 +39,11 @@ class FileTransferProtocolTests(unittest.TestCase):
         payload = b"small-payload"
         wave = encode_to_wave(payload, symbol_duration=0.02, gap_duration=0.05)
         self.assertEqual(decode_from_wave(wave, symbol_duration=0.02, gap_duration=0.05), payload)
+
+    def test_end_marker_detection(self):
+        marker = build_end_marker_wave()
+        self.assertTrue(detect_end_marker(marker))
+        self.assertFalse(detect_end_marker(np.zeros(1000, dtype=np.float32)))
 
 
 if __name__ == "__main__":

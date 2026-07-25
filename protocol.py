@@ -137,6 +137,16 @@ def build_file_transfer_frames(filename: str, payload: bytes, chunk_size: int = 
     return frames
 
 
+def build_end_marker_wave(
+    fs=FS,
+    duration=2.0,
+    marker_freq=1200.0,
+) -> np.ndarray:
+    tone = gen_tone(marker_freq, duration, fs)
+    silence = np.zeros(int(0.3 * fs), dtype=np.float32)
+    return np.concatenate([tone, silence, tone]).astype(np.float32)
+
+
 def encode_file_transfer_wave(
     filename: str,
     payload: bytes,
@@ -162,7 +172,9 @@ def encode_file_transfer_wave(
     if not chunks:
         return np.zeros(0, dtype=np.float32)
     wave = np.concatenate(chunks)
-    return (wave * 0.8).astype(np.float32)
+    wave = (wave * 0.8).astype(np.float32)
+    marker = build_end_marker_wave(fs=fs)
+    return np.concatenate([wave, marker]).astype(np.float32)
 
 
 # ---------------------- ДЕКОДЕР ----------------------
@@ -203,6 +215,17 @@ def _filter_noise(samples: np.ndarray) -> np.ndarray:
     samples = np.asarray(samples, dtype=np.float32)
     window = np.hanning(len(samples))
     return samples * window
+
+
+def detect_end_marker(samples: np.ndarray, fs=FS, threshold: float = 0.04) -> bool:
+    if len(samples) < int(0.5 * fs):
+        return False
+    marker = build_end_marker_wave(fs=fs)
+    if len(marker) > len(samples):
+        marker = marker[:len(samples)]
+    corr = np.correlate(samples[:len(marker)].astype(np.float64), marker.astype(np.float64), mode="full")
+    peak = float(np.max(corr))
+    return peak > threshold
 
 
 def _find_sync_end(samples: np.ndarray, fs=FS, start_index: int = 0) -> int:
@@ -384,10 +407,11 @@ def decode_file_transfer_from_wave(
 
         frame_type = decoded[0] if decoded else None
         if frame_type == 0x00:
-            name_len = decoded[1]
-            name_bytes = decoded[2:2 + name_len]
-            total_size = int.from_bytes(decoded[2 + name_len:6 + name_len], "big")
-            chunk_count = int.from_bytes(decoded[6 + name_len:10 + name_len], "big")
+            payload = decoded[1:]
+            name_len = payload[0]
+            name_bytes = payload[1:1 + name_len]
+            total_size = int.from_bytes(payload[1 + name_len:5 + name_len], "big")
+            chunk_count = int.from_bytes(payload[5 + name_len:9 + name_len], "big")
             metadata = {
                 "filename": name_bytes.decode("utf-8"),
                 "total_size": total_size,
@@ -395,8 +419,9 @@ def decode_file_transfer_from_wave(
             }
             chunks = {}
         elif frame_type == 0x01 and metadata is not None:
-            offset_value = int.from_bytes(decoded[1:5], "big")
-            chunk = decoded[5:]
+            payload = decoded[1:]
+            offset_value = int.from_bytes(payload[0:4], "big")
+            chunk = payload[4:]
             chunks[offset_value] = chunk
         else:
             break
