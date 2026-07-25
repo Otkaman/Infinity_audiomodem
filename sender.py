@@ -36,6 +36,15 @@ def save_wav(path: str, wave: np.ndarray, fs: int = FS):
 
 def play_audio(wave: np.ndarray, fs: int = FS):
     import sounddevice as sd
+    import signal
+
+    def _handle_sigint(signum, frame):
+        sd.stop()
+        raise KeyboardInterrupt
+
+    signal.signal(signal.SIGINT, _handle_sigint)
+    signal.signal(signal.SIGTERM, _handle_sigint)
+
     print("[sender] воспроизведение...")
     try:
         sd.play(wave, fs)
