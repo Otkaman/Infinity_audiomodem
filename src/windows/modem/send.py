@@ -6,7 +6,7 @@ import zlib
 
 
 sample_rate = 48000
-duration = 0.1
+duration = 0.05
 freq_0 = 1800
 freq_1 = 2000
 header = '10101010'

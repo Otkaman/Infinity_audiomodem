@@ -1,0 +1,142 @@
+/* Базовые цвета */
+$background: #0f0f1a;          /* глубокий фон экрана */
+$surface: #1a1a2e;             /* фон карточек/контейнеров */
+$surface-hover: #23233a;       /* подсветка при наведении */
+
+/* Текст */
+$text-primary: #e0e0ff;        /* основной светлый текст */
+$text-secondary: #8888aa;      /* второстепенный приглушённый */
+$text-muted: #5a5a7a;          /* совсем неактивный текст */
+
+/* Акценты */
+$accent: #00bcd4;              /* бирюзовый – главный акцент */
+$accent-light: #4dd0e1;        /* светлый вариант для ховера */
+$accent-dark: #008c9e;         /* тёмный вариант для рамок */
+
+/* Состояния */
+$success: #4caf50;             /* зелёный – успех */
+$warning: #ff9800;             /* оранжевый – предупреждение */
+$error: #f44336;               /* красный – ошибка */
+$info: #2196f3;                /* синий – информация */
+
+/* Границы и разделители */
+$border: #2a2a45;
+$border-focus: $accent;
+
+###################
+
+/* Экран приёма */
+#receive_container {
+    width: 100%;
+    height: 100%;
+    background: $background;
+    padding: 2 4;
+}
+
+/* Контейнер с ASCII‑заголовком */
+#subtitle_container {
+    height: 9;
+    width: 100%;
+    background: $surface;
+    border: thick $border;
+    margin: 0 0 2 0;
+    align: center middle;          /* идеальное центрирование по вертикали и горизонтали */
+}
+
+#subtitle {
+    color: $accent;
+    text-style: bold;
+    text-align: center;
+    content-align: center middle;
+    padding: 0 2;
+}
+
+/* Подпись "Received data:" */
+#support_text {
+    color: $text-secondary;
+    text-style: italic;
+    margin: 0 0 1 0;
+    width: 100%;
+}
+
+/* Область вывода принятых данных (Static) */
+#output {
+    height: 1fr;                  /* займёт всё доступное пространство */
+    margin: 0 0 2 0;
+    padding: 1 2;
+    border: solid $border;
+    background: $surface;
+    color: $text-primary;
+    overflow-y: auto;             /* скролл, если данных много */
+}
+
+/* Горизонтальный ряд кнопок */
+Horizontal {
+    height: auto;
+    align: center middle;
+    margin: 1 0;
+}
+
+Button {
+    text-style: bold;
+    margin: 0 2;
+    min-width: 18;
+    border: solid $border;
+}
+
+Button:focus {
+    border: solid $accent;
+}
+
+/* Start Listening – акцентная кнопка */
+#listen-btn {
+    background: $accent-dark;
+    color: $text-primary;
+}
+
+#listen-btn:hover {
+    background: $accent;
+}
+
+/* Stop – кнопка с предупреждением (error) */
+#stop-btn {
+    background: $error;
+    color: white;
+    border: solid $error;
+}
+
+#stop-btn:hover {
+    background: #e53935;          /* чуть светлее при наведении */
+}
+
+/* Back – нейтральная кнопка */
+#back-btn {
+    background: $surface;
+    color: $text-secondary;
+    border: solid $border;
+}
+
+#back-btn:hover {
+    background: $surface-hover;
+    color: $text-primary;
+}
+
+/* Прогресс-бар */
+.progress-bar {
+    margin: 1 0;
+    height: 1;
+    background: $surface;
+}
+
+.progress-bar > .bar {
+    color: $accent;
+}
+
+/* Статусная строка "Idle" */
+.status-text {
+    color: $text-muted;
+    text-style: italic;
+    text-align: center;
+    margin: 1 0;
+    width: 100%;
+}
