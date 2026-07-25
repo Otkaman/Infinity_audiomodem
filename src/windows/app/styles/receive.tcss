@@ -1,0 +1,56 @@
+#receive_container {
+    margin: 1 2;
+}
+
+#subtitle_container {
+    height: 9;
+    width: 100%;
+    background: #1a1a2e;
+    border: thick #2a2a45;
+    margin: 0 0 1 0;
+
+    align: center top;
+}
+
+#subtitle {
+    color: #00bcd4;
+    text-style: bold;  
+}
+
+#support_text {
+    color: #8888aa;
+    text-style: italic;
+    margin: 0 0 1 0;
+    width: 100%;
+}
+
+#output {
+    height: 1fr;
+    margin: 0 0 2 0;
+    padding: 1 2;
+    border: solid #2a2a45;
+    background: #1a1a2e;
+    color: #e0e0ff;
+    overflow-y: auto;
+}
+
+#button_row {
+    height: auto;
+    align: center middle;
+    margin: 1 0;
+}
+
+.receive-container {
+#    width: 90%;
+#    height: 80%;
+#    margin: 1 2;
+#    border: solid #333333;
+}
+
+.output-box {
+#    height: 15;
+#    border: solid #444;
+#    margin: 1 0;
+#    padding: 1;
+#    background: #252526;
+}

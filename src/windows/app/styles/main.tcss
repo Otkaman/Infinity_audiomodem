@@ -1,0 +1,29 @@
+Screen {
+    background: #0f0f1a;
+    color: #e0e0ff;
+}
+
+Footer {
+    dock: bottom;
+    background: #2d2d2d;
+    color: #9cdcfe;
+    height: 1;
+}
+
+Button {
+    width: 30;
+    margin: 1 2;
+    text-style: bold;
+}
+
+Button:focus {
+    text-style: bold;
+}
+
+Label {
+    margin: 1 2;
+}
+
+Placeholder {
+    height: 100%;
+}
