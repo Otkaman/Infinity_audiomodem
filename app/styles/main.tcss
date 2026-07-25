@@ -1,0 +1,125 @@
+Screen {
+    background: #0a0a1a;
+}
+
+#title {
+    content-align: center middle;
+    width: 100%;
+    height: 8;
+    padding: 1;
+    background: #12122a;
+    color: #00ffaa;
+    text-style: bold;
+    border: solid #00ffaa;
+}
+
+Button {
+    width: 30;
+    height: 3;
+    margin: 1;
+}
+
+#menu-buttons {
+    align: center middle;
+    width: 100%;
+    height: 100%;
+}
+
+#menu-buttons Button {
+    width: 36;
+    height: 4;
+}
+
+Button.-send-btn {
+    background: #0055aa;
+    color: white;
+    border: tall #0077dd;
+}
+
+Button.-receive-btn {
+    background: #00aa55;
+    color: white;
+    border: tall #00dd77;
+}
+
+Button.-back-btn {
+    background: #444444;
+    color: white;
+    border: tall #666666;
+}
+
+Button:hover {
+    text-style: bold;
+    border: tall white;
+}
+
+#input-area {
+    width: 100%;
+    height: auto;
+    padding: 1 2;
+}
+
+#input-area > Input, #input-area > Select {
+    width: 100%;
+    margin: 1 0;
+}
+
+#status-bar {
+    width: 100%;
+    height: 3;
+    background: #1a1a3a;
+    color: #8888cc;
+    padding: 1;
+    content-align: center middle;
+}
+
+#log-widget {
+    width: 100%;
+    height: 10;
+    border: solid #333355;
+    background: #0d0d1f;
+    color: #aaaadd;
+    margin: 0 1;
+    padding: 0 1;
+    overflow-y: scroll;
+}
+
+ProgressBar {
+    width: 100%;
+    margin: 1 0;
+}
+
+ProgressBar > .bar {
+    color: #00ff88;
+    background: #222244;
+}
+
+Horizontal {
+    align: center middle;
+}
+
+#file-info {
+    width: 100%;
+    height: auto;
+    padding: 1;
+    background: #0d0d1f;
+    border: solid #333355;
+    margin: 1;
+    color: #ccccff;
+}
+
+#file-info Label {
+    margin: 0 1;
+}
+
+.-status-ok {
+    color: #00ff88;
+}
+
+.-status-wait {
+    color: #ffaa00;
+}
+
+.-status-err {
+    color: #ff4444;
+}
